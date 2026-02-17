@@ -165,17 +165,18 @@ module SwaggerYard
           end
         end
 
-        # Second pass: add context suffix to duplicates
+        # Second pass: add context suffix to duplicates and update tracked models
         seen_operation_ids = {}
+        operation_models = SwaggerYard::CanvasAdapter.operation_models
 
         openapi_spec["paths"]&.each do |path, methods|
           methods.each_value do |operation|
             next unless operation.is_a?(Hash) && operation["operationId"]
 
-            operation_id = operation["operationId"]
-            if operation_id_counts[operation_id] > 1
+            old_operation_id = operation["operationId"]
+            if operation_id_counts[old_operation_id] > 1
               context = detect_path_context(path)
-              new_operation_id = "#{operation_id}#{context}"
+              new_operation_id = "#{old_operation_id}#{context}"
 
               # Handle edge case of still-duplicate IDs
               counter = 1
@@ -185,12 +186,23 @@ module SwaggerYard
                 new_operation_id = "#{base_new_operation_id}_#{counter}"
               end
 
+              # Update the operation ID
               operation["operationId"] = new_operation_id
               seen_operation_ids[new_operation_id] = true
+
+              # Copy tracked model from old ID to new ID (don't delete - there may be multiple duplicates)
+              if operation_models[old_operation_id]
+                operation_models[new_operation_id] = operation_models[old_operation_id].dup
+              end
             else
-              seen_operation_ids[operation_id] = true
+              seen_operation_ids[old_operation_id] = true
             end
           end
+        end
+
+        # Clean up: remove the old operation IDs that got duplicated
+        operation_id_counts.each do |op_id, count|
+          operation_models.delete(op_id) if count > 1
         end
       end
 
@@ -630,9 +642,21 @@ module SwaggerYard
         schemas.size
       end
 
+      # Replace generic response schemas with proper model references
+      #
+      # During YARD parsing, we track which operations return which models (see CanvasAdapter).
+      # This method performs post-processing to replace generic "type: object" schemas
+      # with proper "$ref" references to model schemas.
+      #
+      # Example transformations:
+      #   @returns User          -> { "$ref": "#/components/schemas/User" }
+      #   @returns [User]        -> { type: array, items: { "$ref": "#/components/schemas/User" } }
+      #   @returns Section       -> { "$ref": "#/components/schemas/Section" }
+      #
+      # Returns: count of schemas replaced
       def replace_responses_with_schema_refs!(openapi_spec)
         operation_models = SwaggerYard::CanvasAdapter.operation_models
-        return if operation_models.empty?
+        return 0 if operation_models.empty?
 
         replaced_count = 0
         openapi_spec["paths"]&.each_value do |methods|

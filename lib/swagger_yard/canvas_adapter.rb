@@ -345,15 +345,17 @@ module SwaggerYard
         "type" => "object"
       }
 
-      # Copy properties
-      if canvas_schema["properties"]
-        openapi_schema["properties"] = convert_properties(canvas_schema["properties"])
-      end
-
-      # Copy required fields - ensure it's an array
+      # Extract required fields list first
+      required_fields = []
       if canvas_schema["required"]
         required = canvas_schema["required"]
-        openapi_schema["required"] = required.is_a?(String) ? [required] : required
+        required_fields = required.is_a?(String) ? [required] : Array(required)
+        openapi_schema["required"] = required_fields
+      end
+
+      # Copy properties with nullable marking for non-required fields
+      if canvas_schema["properties"]
+        openapi_schema["properties"] = convert_properties(canvas_schema["properties"], required_fields)
       end
 
       # Copy description
@@ -366,19 +368,25 @@ module SwaggerYard
       fix_refs_recursive(openapi_schema)
     end
 
-    # Convert properties from Canvas format to OpenAPI format
-    def self.convert_properties(properties)
-      properties.transform_values do |prop_def|
-        convert_single_property(prop_def)
+    # Convert properties from Canvas format to OpenAPI format (mark non-required fields as nullable)
+    def self.convert_properties(properties, required_fields = [])
+      properties.each_with_object({}) do |(prop_name, prop_def), result|
+        is_required = required_fields.include?(prop_name)
+        result[prop_name] = convert_single_property(prop_def, is_required:)
       end
     end
 
-    def self.convert_single_property(prop_def)
+    def self.convert_single_property(prop_def, is_required = true)
       return { "$ref" => "#/components/schemas/#{sanitize_schema_name(prop_def["$ref"])}" } if prop_def["$ref"]
 
       converted_prop = {}
       convert_property_type(converted_prop, prop_def)
       copy_basic_property_fields(converted_prop, prop_def)
+
+      # Mark non-required fields as nullable. Skip if already nullable or if it's an array
+      if !is_required && !converted_prop["nullable"] && converted_prop["type"] != "array"
+        converted_prop["nullable"] = true
+      end
 
       # Handle enums and items carefully for arrays
       if converted_prop["type"] == "array"
@@ -769,22 +777,65 @@ module SwaggerYard
           end
 
           def process_returns_tags(docstring, operation)
+            raw_text = docstring.to_raw
+
             docstring.tags(:returns).each do |tag|
               types = tag.types || ["String"]
               desc = tag.text.to_s.strip
 
-              # Extract model name from types before building schema
-              model_name = extract_model_name_from_types(types)
+              # Determine model name and array status from the raw tag text
+              # This handles Canvas's common @returns patterns:
+              # 1. @returns [User]        -> model=User, is_array=true (parsed by YARD correctly)
+              # 2. @returns User          -> model=User, is_array=false (YARD defaults types to ["String"])
+              # 3. @returns [User] desc   -> model=User, is_array=true + description
+              model_info = extract_return_model_info(types, desc, raw_text)
 
-              response_schema = build_response_schema(types, desc)
+              response_schema = build_response_schema(model_info[:types], desc)
               response_type = SwaggerYard::Type.new(response_schema)
               operation.add_response_type(response_type, desc)
 
-              # Track the model usage for this operation if we found one
-              if model_name
-                track_operation_model(operation.operation_id, model_name, response_schema)
-              end
+              # Track model for post-processing schema replacement
+              next unless model_info[:model_name]
+
+              track_operation_model_with_array(
+                operation.operation_id,
+                model_info[:model_name],
+                model_info[:is_array]
+              )
             end
+          end
+
+          # Extract model name and array status from a @returns tag
+          # Returns: { model_name: String|nil, is_array: Boolean, types: Array }
+          def extract_return_model_info(types, description, raw_text)
+            # Check raw text for array syntax: @returns [Model]
+            is_array_from_raw = !!(raw_text =~ /@returns\s+\[.+\]/)
+
+            # Try extracting model from parsed types first
+            model_name = extract_model_name_from_types(types)
+
+            # Handle Canvas pattern: @returns Model (no brackets)
+            # YARD parses this as types=["String"] with description="Model"
+            if types == ["String"] && description =~ /^[A-Z]\w+$/ && model_schema_exists?(description)
+              model_name = description
+              types = [description]
+            end
+
+            {
+              model_name:,
+              is_array: is_array_from_raw,
+              types:
+            }
+          end
+
+          def track_operation_model_with_array(operation_id, model_name, is_array)
+            return unless model_schema_exists?(model_name)
+
+            SwaggerYard::CanvasAdapter.operation_models[operation_id] ||= {}
+            SwaggerYard::CanvasAdapter.operation_models[operation_id]["200"] = {
+              model: model_name,
+              is_array:
+            }
           end
 
           def add_pagination_parameters_if_needed(_docstring, operation, yard_object)
@@ -891,19 +942,6 @@ module SwaggerYard
               type_str
             end
             # rubocop:enable Lint/DuplicateBranch
-          end
-
-          def track_operation_model(operation_id, model_name, response_schema)
-            return unless model_schema_exists?(model_name)
-
-            # Debug: log tracking attempts
-            # puts "Tracking: #{operation_id} -> #{model_name} (array: #{response_schema.include?('array')})"
-
-            SwaggerYard::CanvasAdapter.operation_models[operation_id] ||= {}
-            SwaggerYard::CanvasAdapter.operation_models[operation_id]["200"] = {
-              model: model_name,
-              is_array: response_schema.include?("array")
-            }
           end
 
           def process_example_tags(docstring, operation)
