@@ -33,6 +33,11 @@ type Account implements LegacyIDInterface & Node {
     before: String
 
     """
+    Whether or not to include or exclude Canvas Career learning library only courses
+    """
+    careerLearningLibraryOnly: Boolean
+
+    """
     Returns the first _n_ elements from the list.
     """
     first: Int
@@ -2175,6 +2180,7 @@ type Course implements AssetString & AssignmentsConnectionInterface & Discussion
     last: Int
   ): UserConnection
   availableModeratorsCount: Int
+  careerLearningLibraryOnly: Boolean
 
   """
   course short name
@@ -10983,7 +10989,12 @@ enum SubmissionState {
 }
 
 type SubmissionStatistics {
-  missingSubmissionsCount: Int!
+  missingSubmissionsCount(
+    """
+    Only count missing submissions from current grading period (default: true)
+    """
+    onlyCurrentGradingPeriod: Boolean = true
+  ): Int!
   submissionsDueCount(endDate: ISO8601DateTime, startDate: ISO8601DateTime): Int!
   submissionsDueThisWeekCount: Int!
   submissionsOverdueCount(endDate: ISO8601DateTime, startDate: ISO8601DateTime): Int!
@@ -11948,6 +11959,11 @@ type User implements LegacyIDInterface & Node & Timestamped {
     observedUserId: ID
 
     """
+    Only include missing submissions from current grading period (default: true)
+    """
+    onlyCurrentGradingPeriod: Boolean = true
+
+    """
     Show only submitted assignments
     """
     onlySubmitted: Boolean
@@ -12019,6 +12035,11 @@ type User implements LegacyIDInterface & Node & Timestamped {
   discussionsSplitscreenView: Boolean!
   email: String
   enrollments(
+    """
+    Whether or not to only filter for or exclude Canvas Career learning library only courses
+    """
+    careerLearningLibraryOnly: Boolean
+
     """
     only return enrollments for this course
     """

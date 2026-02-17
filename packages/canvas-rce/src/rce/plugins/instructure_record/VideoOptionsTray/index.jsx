@@ -31,7 +31,7 @@ import {Spinner} from '@instructure/ui-spinner'
 import {Tooltip} from '@instructure/ui-tooltip'
 import {Tray} from '@instructure/ui-tray'
 import {StoreProvider} from '../../shared/StoreContext'
-import {ClosedCaptionPanel, ClosedCaptionPanelV2} from '@instructure/canvas-media'
+import {ClosedCaptionPanel, ClosedCaptionPanelV2, CONSTANTS} from '@instructure/canvas-media'
 import {
   CUSTOM,
   MIN_WIDTH_VIDEO,
@@ -45,7 +45,7 @@ import {
   MIN_HEIGHT_STUDIO_PLAYER,
 } from '../../instructure_image/ImageEmbedOptions'
 import Bridge from '../../../../bridge'
-import RceApiSource from '../../../../rcs/api'
+import RceApiSource, {originFromHost} from '../../../../rcs/api'
 import formatMessage from '../../../../format-message'
 import DimensionsInput, {useDimensionsState} from '../../shared/DimensionsInput'
 import {getTrayHeight} from '../../shared/trayUtils'
@@ -76,6 +76,7 @@ export default function VideoOptionsTray({
   studioOptions = null,
   forBlockEditorUse = false,
   onStudioEmbedOptionChanged = () => {},
+  onCaptionsModified = null,
 }) {
   const isConsolidatedMediaPlayer = RCEGlobals.getFeatures()?.consolidated_media_player
   const isEmbedImprovements = RCEGlobals.getFeatures()?.rce_studio_embed_improvements
@@ -388,6 +389,28 @@ export default function VideoOptionsTray({
                                 userLocale={Bridge.userLocale}
                                 onUpdateSubtitles={handleUpdateSubtitles}
                                 liveRegion={getLiveRegion}
+                                mountNode={instuiPopupMountNodeFn}
+                                uploadConfig={{
+                                  mediaObjectId: videoOptions.id,
+                                  attachmentId: videoOptions.attachmentId,
+                                  origin: originFromHost(api.host),
+                                  headers: api.jwt
+                                    ? {Authorization: `Bearer ${api.jwt}`}
+                                    : undefined,
+                                  maxBytes: CONSTANTS.CC_FILE_MAX_BYTES,
+                                }}
+                                onCaptionUploaded={subtitle => {
+                                  // Update local state so "Done" button knows about it
+                                  setSubtitles(prev => [
+                                    ...prev.filter(s => s.locale !== subtitle.locale),
+                                    subtitle,
+                                  ])
+                                  onCaptionsModified?.()
+                                }}
+                                onCaptionDeleted={locale => {
+                                  setSubtitles(prev => prev.filter(s => s.locale !== locale))
+                                  onCaptionsModified?.()
+                                }}
                               />
                             )}
                           </FormFieldGroup>
@@ -477,4 +500,5 @@ VideoOptionsTray.propTypes = {
   studioOptions: parsedStudioOptionsPropType,
   requestSubtitlesFromIframe: func,
   onStudioEmbedOptionChanged: func,
+  onCaptionsModified: func,
 }

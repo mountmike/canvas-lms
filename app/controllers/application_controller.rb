@@ -476,6 +476,7 @@ class ApplicationController < ActionController::Base
   JS_ENV_SITE_ADMIN_FEATURES = %i[
     account_level_blackout_dates
     assignment_edit_placement_not_on_announcements
+    a11y_checker_ga2_features
     block_content_editor_toolbar_reorder
     commons_new_quizzes
     consolidated_media_player
@@ -542,6 +543,7 @@ class ApplicationController < ActionController::Base
     lti_registrations_discover_page
     lti_registrations_next
     lti_registrations_page
+    lti_registrations_templates
     lti_registrations_usage_data
     lti_registrations_usage_data_dev
     lti_registrations_usage_data_low_usage
@@ -1989,7 +1991,7 @@ class ApplicationController < ActionController::Base
     return unless page_views_enabled?
 
     page_view_info = CanvasSecurity::PageViewJwt.decode(params[:page_view_token])
-    @page_view = PageView.find_for_update(page_view_info[:request_id])
+    @page_view = PageView.find_for_update(page_view_info[:request_id], page_view_info[:created_at])
     if @page_view
       if @page_view.id
         response.headers["X-Canvas-Page-View-Update-Url"] = page_view_path(
@@ -3611,7 +3613,7 @@ class ApplicationController < ActionController::Base
   def widget_dashboard_eligible?
     return false unless @current_user
 
-    @current_user.observer_enrollments.active.any? || !@current_user.non_student_enrollment?
+    @current_user.observer_enrollments.active_or_pending.any? || !@current_user.active_non_student_enrollment?
   end
 
   def use_classic_font?

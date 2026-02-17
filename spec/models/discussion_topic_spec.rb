@@ -1680,19 +1680,19 @@ describe DiscussionTopic do
       end
 
       it "does not allow observers to see replies to a discussion linked students haven't posted in" do
-        expect(@topic.initial_post_required?(@observer)).to be
+        expect(@topic.initial_post_required?(@observer)).to be true
       end
 
       # previously this worked for exactly one observer enrollment, whichever became @context_enrollment
       # so test both ways
       it "allows observers to see replies in a discussion a linked student has posted in (1/2)" do
         @topic.reply_from(user: @student, text: "wat")
-        expect(@topic.initial_post_required?(@observer)).not_to be
+        expect(@topic.initial_post_required?(@observer)).to be false
       end
 
       it "allows observers to see replies in a discussion a linked student has posted in (2/2)" do
         @topic.reply_from(user: @other_student, text: "wat")
-        expect(@topic.initial_post_required?(@observer)).not_to be
+        expect(@topic.initial_post_required?(@observer)).to be false
       end
     end
   end
@@ -4421,6 +4421,7 @@ describe DiscussionTopic do
       before do
         Account.site_admin.enable_feature!(:a11y_checker_additional_resources)
         course.root_account.enable_feature!(:a11y_checker)
+        course.root_account.enable_feature!(:accessibility_automatic_scanning)
         course.enable_feature!(:a11y_checker_eap)
         Progress.create!(tag: Accessibility::CourseScanService::SCAN_TAG, context: course, workflow_state: "completed")
       end
@@ -4640,6 +4641,37 @@ describe DiscussionTopic do
             expect(AccessibilityResourceScan.where(context: topic).count).to eq(0)
           end
         end
+      end
+    end
+
+    context "when automatic scanning feature flag is disabled" do
+      before do
+        Account.site_admin.enable_feature!(:a11y_checker_additional_resources)
+        course.root_account.enable_feature!(:a11y_checker)
+        course.root_account.disable_feature!(:accessibility_automatic_scanning)
+        course.enable_feature!(:a11y_checker_eap)
+        Progress.create!(tag: Accessibility::CourseScanService::SCAN_TAG, context: course, workflow_state: "completed")
+      end
+
+      it "does not trigger accessibility scan on create" do
+        expect(Accessibility::ResourceScannerService).not_to receive(:call)
+
+        DiscussionTopic.create!(title: "Test Topic", message: "Test message", course:)
+      end
+
+      it "does not trigger accessibility scan on update" do
+        topic = DiscussionTopic.create!(title: "Test Topic", course:)
+
+        expect(Accessibility::ResourceScannerService).not_to receive(:call)
+
+        topic.update!(message: "Updated message")
+      end
+
+      it "still triggers destroy when deleting discussion topic" do
+        topic = DiscussionTopic.create!(title: "Test Topic", course:)
+        AccessibilityResourceScan.create!(context: topic, course:)
+
+        expect { topic.destroy! }.to change { AccessibilityResourceScan.where(discussion_topic_id: topic.id).count }.from(1).to(0)
       end
     end
   end

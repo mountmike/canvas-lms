@@ -29,6 +29,7 @@ import {
   DEFAULT_GRADEBOOK_SETTINGS,
   DisplayFilter,
   NameDisplayFormat,
+  CELL_HEIGHT,
 } from '@canvas/outcomes/react/utils/constants'
 import {useScope as createI18nScope} from '@canvas/i18n'
 import {
@@ -183,12 +184,13 @@ const GradebookTableComponent: React.FC<GradebookTableComponentProps> = ({
           outcome={outcome}
           outcomeDistribution={outcomeDistributions?.[outcome.id.toString()]}
           distributionStudents={distributionStudents}
+          courseId={courseId}
           sorting={sorting}
           contributingScoresForOutcome={contributingScoreForOutcome}
         />
       )
     },
-    [sorting, outcomeDistributions, distributionStudents],
+    [sorting, outcomeDistributions, distributionStudents, courseId],
   )
 
   const renderOutcomeCell = useCallback(
@@ -255,18 +257,22 @@ const GradebookTableComponent: React.FC<GradebookTableComponentProps> = ({
     const commonColHeaderProps = {
       borderWidth: 'large 0 medium 0',
       background: 'secondary',
+      height: CELL_HEIGHT,
     }
 
     columns.push({
       key: 'student',
       header: renderStudentHeader,
       render: renderStudentCell,
-      width: STUDENT_COLUMN_WIDTH + STUDENT_COLUMN_RIGHT_PADDING,
       isSticky: !isMobile,
       isRowHeader: true,
       colHeaderProps: {
         'data-testid': 'student-header',
+        width: STUDENT_COLUMN_WIDTH + STUDENT_COLUMN_RIGHT_PADDING,
         ...commonColHeaderProps,
+      },
+      cellProps: {
+        height: CELL_HEIGHT,
       },
     } as Column)
 
@@ -277,12 +283,15 @@ const GradebookTableComponent: React.FC<GradebookTableComponentProps> = ({
           key: `outcome-${outcome.id}`,
           header: renderOutcomeHeader(outcome, contributingScoreForOutcome),
           render: renderOutcomeCell(outcome),
-          width: COLUMN_WIDTH + COLUMN_PADDING,
           draggable: true,
           data: {outcome},
           colHeaderProps: {
             'data-testid': `outcome-header-${outcome.id}`,
+            width: COLUMN_WIDTH + COLUMN_PADDING,
             ...commonColHeaderProps,
+          },
+          cellProps: {
+            height: CELL_HEIGHT,
           },
         } as Column)
 
@@ -297,15 +306,16 @@ const GradebookTableComponent: React.FC<GradebookTableComponentProps> = ({
                   alignment,
                   contributingScoreForOutcome,
                 ),
-                width: COLUMN_WIDTH + COLUMN_PADDING,
                 data: {outcome, alignment, contributingScoreForOutcome},
                 cellProps: {
                   padding: '0',
                   overflowX: 'hidden',
                   overflowY: 'hidden',
+                  height: CELL_HEIGHT,
                 },
                 colHeaderProps: {
                   'data-testid': `contributing-score-header-${outcome.id}-${alignment.alignment_id}`,
+                  width: COLUMN_WIDTH + COLUMN_PADDING,
                   ...commonColHeaderProps,
                 },
               } as Column)

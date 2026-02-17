@@ -142,8 +142,17 @@ module Types
 
     global_id_field :id
 
+    field :career_learning_library_only, Boolean, null: true
+
+    def career_learning_library_only
+      return nil unless object.root_account.feature_enabled?(:horizon_learning_library_ms2)
+
+      object.career_learning_library_only
+    end
+
     field :course_code, String, "course short name", null: true
     field :horizon_course, Boolean, null: true
+
     field :name, String, null: false
     field :state, CourseWorkflowState, method: :workflow_state, null: false
     field :syllabus_body, String, null: true
@@ -607,13 +616,13 @@ module Types
 
         is_observer = !observed_students.empty?
 
-        if is_observer
-          Loaders::ObserverCourseSubmissionDataLoader.for(current_user:, request: context[:request], observed_user_id:).load(course)
-        elsif observed_user_id.nil?
-          Loaders::CourseSubmissionDataLoader.for(current_user:).load(course)
-        else
-          nil
-        end
+        loader_promise = if is_observer
+                           Loaders::ObserverCourseSubmissionDataLoader.for(current_user:, request: context[:request], observed_user_id:).load(course)
+                         elsif observed_user_id.nil?
+                           Loaders::CourseSubmissionDataLoader.for(current_user:).load(course)
+                         end
+
+        loader_promise&.then { |submissions| { course:, submissions: } }
       end
     end
 
